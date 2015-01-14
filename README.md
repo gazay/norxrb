@@ -6,7 +6,8 @@ The specification of NORX can be found [here](https://norx.io/data/norx.pdf).
 
 ####License
 The NORX source code is released under the
-[CC0 license](https://creativecommons.org/publicdomain/zero/1.0/), see `LICENSE` for more details.
+[CC0 license](https://creativecommons.org/publicdomain/zero/1.0/),
+see `LICENSE` for more details.
 
 ####Usage & Examples
 TODO

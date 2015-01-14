@@ -1,0 +1,274 @@
+class Norx
+
+  attr_reader :w, :r, :d, :t
+
+  def initialize(w = 64, r = 4, d = 1, t = 256)
+    @w = w
+    @r = r
+    @d = d
+    @t = t
+    raise unless valid_params?
+  end
+
+  def load(x)
+    x.unpack(vars[:fmt]).first
+  end
+
+  def store(x)
+    if x.is_a?(Array)
+      x.pack(vars[:fmt])
+    else
+      [x].pack(vars[:fmt])
+    end
+  end
+
+  def rotr(a, r)
+    ((a >> r) | (a << (vars[:NORX_W] - r))) & vars[:M]
+  end
+
+  def h(a, b)
+    ((a ^ b) ^ ((a & b) << 1)) & vars[:M]
+  end
+
+  def g(a, b, c, d)
+    a = h(a, b)
+    d = rotr(a ^ d, vars[:R][0])
+    c = h(c, d)
+    b = rotr(b ^ c, vars[:R][1])
+    a = h(a, b)
+    d = rotr(a ^ d, vars[:R][2])
+    c = h(c, d)
+    b = rotr(b ^ c, vars[:R][3])
+    [a, b, c, d]
+  end
+
+  def f(s)
+    # Column step
+    s[ 0], s[ 4], s[ 8], s[12] = self.G(s[ 0], s[ 4], s[ 8], s[12]);
+    s[ 1], s[ 5], s[ 9], s[13] = self.G(s[ 1], s[ 5], s[ 9], s[13]);
+    s[ 2], s[ 6], s[10], s[14] = self.G(s[ 2], s[ 6], s[10], s[14]);
+    s[ 3], s[ 7], s[11], s[15] = self.G(s[ 3], s[ 7], s[11], s[15]);
+    # Diagonal step
+    s[ 0], s[ 5], s[10], s[15] = self.G(s[ 0], s[ 5], s[10], s[15]);
+    s[ 1], s[ 6], s[11], s[12] = self.G(s[ 1], s[ 6], s[11], s[12]);
+    s[ 2], s[ 7], s[ 8], s[13] = self.G(s[ 2], s[ 7], s[ 8], s[13]);
+    s[ 3], s[ 4], s[ 9], s[14] = self.G(s[ 3], s[ 4], s[ 9], s[14]);
+
+    def permute(self,S):
+        for i in xrange(self.NORX_R):
+            self.F(S)
+
+    def pad(self,x):
+        y = bytearray(self.BYTES_RATE)
+        y[:len(x)] = x
+        y[len(x)] = 0x01
+        y[self.BYTES_RATE-1] |= 0x80
+        return y
+
+    def init(self,S,n,k):
+        b = self.BYTES_WORD
+        K = [ self.load(k[b*i:b*(i+1)]) for i in xrange(self.NORX_K / self.NORX_W) ]
+        N = [ self.load(n[b*i:b*(i+1)]) for i in xrange(self.NORX_N / self.NORX_W) ]
+        U = self.U
+        S[ 0], S[ 1], S[ 2], S[ 3] = U[0], N[0], N[1], U[1]
+        S[ 4], S[ 5], S[ 6], S[ 7] = K[0], K[1], K[2], K[3]
+        S[ 8], S[ 9], S[10], S[11] = U[2], U[3], U[4], U[5]
+        S[12], S[13], S[14], S[15] = U[6], U[7], U[8], U[9]
+        S[12] ^= self.NORX_W
+        S[13] ^= self.NORX_R
+        S[14] ^= self.NORX_D
+        S[15] ^= self.NORX_T
+        self.permute(S)
+
+    def inject_tag(self,S,tag):
+        S[15] ^= tag
+
+    def process_header(self,S,x):
+        return self.absorb_data(S,x,self.HEADER_TAG)
+
+    def process_trailer(self,S,x):
+        return self.absorb_data(S,x,self.TRAILER_TAG)
+
+    def absorb_data(self,S,x,tag):
+        inlen = len(x)
+        if inlen > 0:
+            i, n = 0, self.BYTES_RATE
+            while inlen >= n:
+                self.absorb_block(S,x[n*i:n*(i+1)],tag)
+                inlen -= n
+                i += 1
+            self.absorb_lastblock(S,x[n*i:n*i+inlen],tag)
+
+    def absorb_block(self,S,x,tag):
+        b = self.BYTES_WORD
+        self.inject_tag(S,tag)
+        self.permute(S)
+        for i in xrange(self.WORDS_RATE):
+            S[i] ^= self.load(x[b*i:b*(i+1)])
+
+    def absorb_lastblock(self,S,x,tag):
+        y = self.pad(x)
+        self.absorb_block(S,y,tag)
+
+    def encrypt_data(self,S,x):
+        c = bytearray()
+        inlen = len(x)
+        if inlen > 0:
+            i, n = 0, self.BYTES_RATE
+            while inlen >= n:
+                c += self.encrypt_block(S,x[n*i:n*(i+1)])
+                inlen -= n
+                i +=1
+            c += self.encrypt_lastblock(S,x[n*i:n*i+inlen])
+        return c
+
+    def encrypt_block(self,S,x):
+        c = bytearray()
+        b = self.BYTES_WORD
+        self.inject_tag(S,self.PAYLOAD_TAG)
+        self.permute(S)
+        for i in xrange(self.WORDS_RATE):
+            S[i] ^= self.load(x[b*i:b*(i+1)])
+            c += self.store(S[i])
+        return c[:self.BYTES_RATE]
+
+    def encrypt_lastblock(self,S,x):
+        y = self.pad(x)
+        c = self.encrypt_block(S,y)
+        return c[:len(x)]
+
+    def decrypt_data(self,S,x):
+        m = bytearray()
+        inlen = len(x)
+        if inlen > 0:
+            i, n = 0, self.BYTES_RATE
+            while inlen >= n:
+                m += self.decrypt_block(S,x[n*i:n*(i+1)])
+                inlen -= n
+                i +=1
+            m += self.decrypt_lastblock(S,x[n*i:n*i+inlen])
+        return m
+
+    def decrypt_block(self,S,x):
+        m = bytearray()
+        b = self.BYTES_WORD
+        self.inject_tag(S,self.PAYLOAD_TAG)
+        self.permute(S)
+        for i in xrange(self.WORDS_RATE):
+            c = self.load(x[b*i:b*(i+1)])
+            m += self.store(S[i] ^ c)
+            S[i] = c
+        return m[:self.BYTES_RATE]
+
+    def decrypt_lastblock(self,S,x):
+        m = bytearray()
+        y = bytearray()
+        b = self.BYTES_WORD
+        self.inject_tag(S,self.PAYLOAD_TAG)
+        self.permute(S)
+        for i in xrange(self.WORDS_RATE):
+            y += self.store(S[i])
+        y[:len(x)] = bytearray(x)
+        y[len(x)] ^= 0x01
+        y[self.BYTES_RATE-1] ^= 0x80
+        for i in xrange(self.WORDS_RATE):
+            c = self.load(y[b*i:b*(i+1)])
+            m += self.store(S[i] ^ c)
+            S[i] = c
+        return m[:len(x)]
+
+    def generate_tag(self,S):
+        t = bytearray()
+        self.inject_tag(S,self.FINAL_TAG)
+        self.permute(S)
+        self.permute(S)
+        for i in xrange(self.WORDS_RATE):
+            t += self.store(S[i])
+        return t[:self.BYTES_TAG]
+
+    def verify_tag(self, t0, t1):
+        acc = 0
+        for i in xrange(self.BYTES_TAG):
+            acc |= t0[i] ^ t1[i]
+        return (((acc - 1) >> 8) & 1) - 1
+
+    def aead_encrypt(self,h,m,t,n,k):
+        assert len(k) == self.NORX_K / 8
+        assert len(n) == self.NORX_N / 8
+        c = bytearray()
+        S = [0] * 16
+        self.init(S,n,k)
+        self.process_header(S,h)
+        c += self.encrypt_data(S,m)
+        self.process_trailer(S,t)
+        c += self.generate_tag(S)
+        return str(c)
+
+    def aead_decrypt(self,h,c,t,n,k):
+        assert len(k) == self.NORX_K / 8
+        assert len(n) == self.NORX_N / 8
+        assert len(c) >= self.BYTES_TAG
+        m = bytearray()
+        c = bytearray(c)
+        S = [0] * 16
+        d = len(c)-self.BYTES_TAG
+        c,t0 = c[:d],c[d:]
+        self.init(S,n,k)
+        self.process_header(S,h)
+        m += self.decrypt_data(S,c)
+        self.process_trailer(S,t)
+        t1 = self.generate_tag(S)
+        if self.verify_tag(t0,t1) != 0:
+            m = ''
+        return str(m)
+
+  private
+
+  def vars
+    @vars ||= begin
+      _vars = \
+        {
+          :NORX_W => w,
+          :NORX_R => r,
+          :NORX_D => d,
+          :NORX_T => t,
+          :NORX_N => w * 2,
+          :NORX_K => w * 4,
+          :NORX_B => w * 16,
+          :NORX_C => w * 6,
+          :HEADER_TAG  =>  1 << 0,
+          :PAYLOAD_TAG => 1 << 1,
+          :TRAILER_TAG => 1 << 2,
+          :FINAL_TAG   =>   1 << 3,
+          :BRANCH_TAG  =>  1 << 4,
+          :MERGE_TAG   =>   1 << 5,
+          :BYTES_WORD  => w / 8,
+          :BYTES_TAG   => t / 8,
+        }
+      _vars[:RATE]       = _vars[:NORX_B] - _vars[:NORX_C]
+      _vars[:WORDS_RATE] = _vars[:RATE] / w
+      _vars[:BYTES_RATE] = _vars[:WORDS_RATE] * _vars[:BYTES_WORD]
+      if w == 32
+        _vars[:R]   = (8,11,16,31)
+        _vars[:U]   = (0x243F6A88, 0x85A308D3, 0x13198A2E, 0x03707344, 0x254F537A,
+                       0x38531D48, 0x839C6E83, 0xF97A3AE5, 0x8C91D88C, 0x11EAFB59)
+        _vars[:M]   = 0xffffffff
+        _vars[:fmt] = '<L'
+      else
+        _vars[:R]   = (8,19,40,63)
+        _vars[:U]   = (0x243F6A8885A308D3, 0x13198A2E03707344, 0xA4093822299F31D0, 0x082EFA98EC4E6C89, 0xAE8858DC339325A1,
+                       0x670A134EE52D7FA6, 0xC4316D80CD967541, 0xD21DFBF8B630B762, 0x375A18D261E7F892, 0x343D1F187D92285B)
+        _vars[:M]   = 0xffffffffffffffff
+        _vars[:fmt] = '<Q'
+      end
+    end
+  end
+
+  def valid_params?
+    [32,64].include?(w) &&
+    r >= 1 &&
+    d >= 0 &&
+    10*w >= t && t >= 0
+  end
+
+end
