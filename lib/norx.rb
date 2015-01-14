@@ -44,26 +44,31 @@ class Norx
 
   def f(s)
     # Column step
-    s[ 0], s[ 4], s[ 8], s[12] = self.G(s[ 0], s[ 4], s[ 8], s[12]);
-    s[ 1], s[ 5], s[ 9], s[13] = self.G(s[ 1], s[ 5], s[ 9], s[13]);
-    s[ 2], s[ 6], s[10], s[14] = self.G(s[ 2], s[ 6], s[10], s[14]);
-    s[ 3], s[ 7], s[11], s[15] = self.G(s[ 3], s[ 7], s[11], s[15]);
+    s[ 0], s[ 4], s[ 8], s[12] = g(s[ 0], s[ 4], s[ 8], s[12]);
+    s[ 1], s[ 5], s[ 9], s[13] = g(s[ 1], s[ 5], s[ 9], s[13]);
+    s[ 2], s[ 6], s[10], s[14] = g(s[ 2], s[ 6], s[10], s[14]);
+    s[ 3], s[ 7], s[11], s[15] = g(s[ 3], s[ 7], s[11], s[15]);
     # Diagonal step
-    s[ 0], s[ 5], s[10], s[15] = self.G(s[ 0], s[ 5], s[10], s[15]);
-    s[ 1], s[ 6], s[11], s[12] = self.G(s[ 1], s[ 6], s[11], s[12]);
-    s[ 2], s[ 7], s[ 8], s[13] = self.G(s[ 2], s[ 7], s[ 8], s[13]);
-    s[ 3], s[ 4], s[ 9], s[14] = self.G(s[ 3], s[ 4], s[ 9], s[14]);
+    s[ 0], s[ 5], s[10], s[15] = g(s[ 0], s[ 5], s[10], s[15]);
+    s[ 1], s[ 6], s[11], s[12] = g(s[ 1], s[ 6], s[11], s[12]);
+    s[ 2], s[ 7], s[ 8], s[13] = g(s[ 2], s[ 7], s[ 8], s[13]);
+    s[ 3], s[ 4], s[ 9], s[14] = g(s[ 3], s[ 4], s[ 9], s[14]);
+    s
+  end
 
-    def permute(self,S):
-        for i in xrange(self.NORX_R):
-            self.F(S)
+  def permute(s)
+    vars[:NORX_R].times do
+      s = f(s)
+    end
+    s
+  end
 
-    def pad(self,x):
-        y = bytearray(self.BYTES_RATE)
-        y[:len(x)] = x
-        y[len(x)] = 0x01
-        y[self.BYTES_RATE-1] |= 0x80
-        return y
+  def pad(self,x):
+    y = bytearray(self.BYTES_RATE)
+    y[:len(x)] = x
+    y[len(x)] = 0x01
+    y[self.BYTES_RATE-1] |= 0x80
+    return y
 
     def init(self,S,n,k):
         b = self.BYTES_WORD
