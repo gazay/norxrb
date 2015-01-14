@@ -10,7 +10,7 @@ class Norx
     raise unless valid_params?
   end
 
-  def load(x)
+  def _load(x)
     x.unpack(vars[:fmt]).first
   end
 
@@ -65,167 +65,206 @@ class Norx
 
   def pad(self,x):
     y = bytearray(self.BYTES_RATE)
-    y[:len(x)] = x
-    y[len(x)] = 0x01
-    y[self.BYTES_RATE-1] |= 0x80
-    return y
+    x.length.times do |i|
+      y[i-1] = x
+    end
+    y[x.length] = 0x01
+    y[vars[:BYTES_RATE]-1] |= 0x80 # TODO
+    y
+  end
 
-    def init(self,S,n,k):
-        b = self.BYTES_WORD
-        K = [ self.load(k[b*i:b*(i+1)]) for i in xrange(self.NORX_K / self.NORX_W) ]
-        N = [ self.load(n[b*i:b*(i+1)]) for i in xrange(self.NORX_N / self.NORX_W) ]
-        U = self.U
-        S[ 0], S[ 1], S[ 2], S[ 3] = U[0], N[0], N[1], U[1]
-        S[ 4], S[ 5], S[ 6], S[ 7] = K[0], K[1], K[2], K[3]
-        S[ 8], S[ 9], S[10], S[11] = U[2], U[3], U[4], U[5]
-        S[12], S[13], S[14], S[15] = U[6], U[7], U[8], U[9]
-        S[12] ^= self.NORX_W
-        S[13] ^= self.NORX_R
-        S[14] ^= self.NORX_D
-        S[15] ^= self.NORX_T
-        self.permute(S)
+  def init(s, n, k)
+    b = vars[:BYTES_WORD]
+    (vars[:NORX_K] / vars[:NORX_W]).times do |i|
+      k = [ _load(k[b*i..b*(i+1)]) for i in xrange(self.NORX_K / self.NORX_W) ]
+    end
+    (vars[:NORX_N] / vars[:NORX_W]).times do |i|
+      n = [ _load(n[b*i..b*(i+1)])
+    end
+    u = vars[:U]
+    s[ 0], s[ 1], s[ 2], s[ 3] = u[0], n[0], n[1], u[1]
+    s[ 4], s[ 5], s[ 6], s[ 7] = k[0], k[1], k[2], k[3]
+    s[ 8], s[ 9], s[10], s[11] = u[2], u[3], u[4], u[5]
+    s[12], s[13], s[14], s[15] = u[6], u[7], u[8], u[9]
+    s[12] ^= vars[:NORX_W]
+    s[13] ^= vars[:NORX_R]
+    s[14] ^= vars[:NORX_D]
+    s[15] ^= vars[:NORX_T]
+    permute(s)
+  end
 
-    def inject_tag(self,S,tag):
-        S[15] ^= tag
+  def inject_tag(s, tag)
+    s[15] ^= tag
+  end
 
-    def process_header(self,S,x):
-        return self.absorb_data(S,x,self.HEADER_TAG)
+  def process_header(s, x)
+    absorb_data(s, x, vars[:HEADER_TAG])
+  end
 
-    def process_trailer(self,S,x):
-        return self.absorb_data(S,x,self.TRAILER_TAG)
+  def process_trailer(s, x)
+    absorb_data(s, x, vars[:TRAILER_TAG])
+  end
 
-    def absorb_data(self,S,x,tag):
-        inlen = len(x)
-        if inlen > 0:
-            i, n = 0, self.BYTES_RATE
-            while inlen >= n:
-                self.absorb_block(S,x[n*i:n*(i+1)],tag)
-                inlen -= n
-                i += 1
-            self.absorb_lastblock(S,x[n*i:n*i+inlen],tag)
+  def absorb_data(s, x, tag)
+    inlen = x.length
+    if inlen > 0
+      i, n = 0, vars[:BYTES_RATE]
+      while inlen >= n
+        absorb_block(s, x[n*i..n*(i+1)], tag)
+        inlen -= n
+        i += 1
+      end
+      absorb_lastblock(s, x[n*i..(n*i+inlen)], tag)
+    end
+  end
 
-    def absorb_block(self,S,x,tag):
-        b = self.BYTES_WORD
-        self.inject_tag(S,tag)
-        self.permute(S)
-        for i in xrange(self.WORDS_RATE):
-            S[i] ^= self.load(x[b*i:b*(i+1)])
+  def absorb_block(s, x, tag)
+    b = vars[:BYTES_WORD]
+    inject_tag(s, tag)
+    permute(s)
+    vars[:WORDS_RATE].times do |i|
+      s[i] ^= _load(x[b*i..b*(i+1)])
+    end
+  end
 
-    def absorb_lastblock(self,S,x,tag):
-        y = self.pad(x)
-        self.absorb_block(S,y,tag)
+  def absorb_lastblock(s, x, tag)
+    y = pad(x)
+    absorb_block(s, y, tag)
+  end
 
-    def encrypt_data(self,S,x):
-        c = bytearray()
-        inlen = len(x)
-        if inlen > 0:
-            i, n = 0, self.BYTES_RATE
-            while inlen >= n:
-                c += self.encrypt_block(S,x[n*i:n*(i+1)])
-                inlen -= n
-                i +=1
-            c += self.encrypt_lastblock(S,x[n*i:n*i+inlen])
-        return c
+  def encrypt_data(s, x)
+    c = []
+    inlen = x.length
+    if inlen > 0
+      i, n = 0, vars[:BYTES_RATE]
+      while inlen >= n
+        c += encrypt_block(s,x[n*i..n*(i+1)])
+        inlen -= n
+        i += 1
+      end
+      c += encrypt_lastblock(s, x[n*i..(n*i+inlen)])
+    end
+    c
+  end
 
-    def encrypt_block(self,S,x):
-        c = bytearray()
-        b = self.BYTES_WORD
-        self.inject_tag(S,self.PAYLOAD_TAG)
-        self.permute(S)
-        for i in xrange(self.WORDS_RATE):
-            S[i] ^= self.load(x[b*i:b*(i+1)])
-            c += self.store(S[i])
-        return c[:self.BYTES_RATE]
+  def encrypt_block(s, x)
+    c = []
+    b = vars[:BYTES_WORD]
+    inject_tag(s, vars[:PAYLOAD_TAG])
+    permute(s)
+    vars[:WORDS_RATE].times do |i|
+      s[i] ^= _load(x[b*i..b*(i+1)])
+      c += store(s[i])
+    end
+    c[0..vars[:BYTES_RATE]]
+  end
 
-    def encrypt_lastblock(self,S,x):
-        y = self.pad(x)
-        c = self.encrypt_block(S,y)
-        return c[:len(x)]
+  def encrypt_lastblock(s, x)
+    y = pad(x)
+    c = encrypt_block(s, y)
+    c[0..x.length]
+  end
 
-    def decrypt_data(self,S,x):
-        m = bytearray()
-        inlen = len(x)
-        if inlen > 0:
-            i, n = 0, self.BYTES_RATE
-            while inlen >= n:
-                m += self.decrypt_block(S,x[n*i:n*(i+1)])
-                inlen -= n
-                i +=1
-            m += self.decrypt_lastblock(S,x[n*i:n*i+inlen])
-        return m
+  def decrypt_data(s, x)
+    m = []
+    inlen = x.length
+    if inlen > 0
+      i, n = 0, vars[:BYTES_RATE]
+      while inlen >= n
+        m += decrypt_block(s, x[n*i..n*(i+1)])
+        inlen -= n
+        i +=1
+      end
+      m += decrypt_lastblock(s, x[n*i..(n*i+inlen)])
+    end
+    m
+  end
 
-    def decrypt_block(self,S,x):
-        m = bytearray()
-        b = self.BYTES_WORD
-        self.inject_tag(S,self.PAYLOAD_TAG)
-        self.permute(S)
-        for i in xrange(self.WORDS_RATE):
-            c = self.load(x[b*i:b*(i+1)])
-            m += self.store(S[i] ^ c)
-            S[i] = c
-        return m[:self.BYTES_RATE]
+  def decrypt_block(s, x)
+    m = []
+    b = vars[:BYTES_WORD]
+    inject_tag(s, vars[:PAYLOAD_TAG])
+    permute(s)
+    vars[:WORDS_RATE].times do |i|
+      c = _load(x[b*i..b*(i+1)])
+      m += store(s[i] ^ c)
+      s[i] = c
+    end
+    m[0..vars[:BYTES_RATE]]
+  end
 
-    def decrypt_lastblock(self,S,x):
-        m = bytearray()
-        y = bytearray()
-        b = self.BYTES_WORD
-        self.inject_tag(S,self.PAYLOAD_TAG)
-        self.permute(S)
-        for i in xrange(self.WORDS_RATE):
-            y += self.store(S[i])
-        y[:len(x)] = bytearray(x)
-        y[len(x)] ^= 0x01
-        y[self.BYTES_RATE-1] ^= 0x80
-        for i in xrange(self.WORDS_RATE):
-            c = self.load(y[b*i:b*(i+1)])
-            m += self.store(S[i] ^ c)
-            S[i] = c
-        return m[:len(x)]
+  def decrypt_lastblock(s, x)
+    m = []
+    y = []
+    b = vars[:BYTES_WORD]
+    inject_tag(s, vars[:PAYLOAD_TAG])
+    permute(s)
+    vars[:WORDS_RATE].times do |i|
+      y += store(s[i])
+    end
+    y[0..x.length] = Array.new(x)
+    y[x.length] ^= 0x01
+    y[vars[:BYTES_RATE-1]] ^= 0x80
+    vars[:WORDS_RATE].times do |i|
+      c = _load(y[b*i..b*(i+1)])
+      m += store(s[i] ^ c)
+      s[i] = c
+    end
+    m[0..x.length]
+  end
 
-    def generate_tag(self,S):
-        t = bytearray()
-        self.inject_tag(S,self.FINAL_TAG)
-        self.permute(S)
-        self.permute(S)
-        for i in xrange(self.WORDS_RATE):
-            t += self.store(S[i])
-        return t[:self.BYTES_TAG]
+  def generate_tag(s)
+    t = []
+    inject_tag(s, vars[:FINAL_TAG])
+    permute(s)
+    permute(s)
+    vars[:WORDS_RATE].times do |i|
+      t += store(s[i])
+    end
+    t[0..vars[:BYTES_TAG]]
+  end
 
-    def verify_tag(self, t0, t1):
-        acc = 0
-        for i in xrange(self.BYTES_TAG):
-            acc |= t0[i] ^ t1[i]
-        return (((acc - 1) >> 8) & 1) - 1
+  def verify_tag(t0, t1)
+    acc = 0
+    vars[:BYTES_TAG].times do |i|
+      acc |= t0[i] ^ t1[i]
+    end
+    (((acc - 1) >> 8) & 1) - 1
+  end
 
-    def aead_encrypt(self,h,m,t,n,k):
-        assert len(k) == self.NORX_K / 8
-        assert len(n) == self.NORX_N / 8
-        c = bytearray()
-        S = [0] * 16
-        self.init(S,n,k)
-        self.process_header(S,h)
-        c += self.encrypt_data(S,m)
-        self.process_trailer(S,t)
-        c += self.generate_tag(S)
-        return str(c)
+  def aead_encrypt(h, m, t, n, k)
+    raise unless k.length == vars[:NORX_K] / 8
+    raise unless n.length == vars[:NORX_N] / 8
+    c = []
+    s = [0] * 16
+    init(s, n, k)
+    process_header(s, h)
+    c += encrypt_data(s, m)
+    process_trailer(s, t)
+    c += generate_tag(s)
+    c.to_s
+  end
 
-    def aead_decrypt(self,h,c,t,n,k):
-        assert len(k) == self.NORX_K / 8
-        assert len(n) == self.NORX_N / 8
-        assert len(c) >= self.BYTES_TAG
-        m = bytearray()
-        c = bytearray(c)
-        S = [0] * 16
-        d = len(c)-self.BYTES_TAG
-        c,t0 = c[:d],c[d:]
-        self.init(S,n,k)
-        self.process_header(S,h)
-        m += self.decrypt_data(S,c)
-        self.process_trailer(S,t)
-        t1 = self.generate_tag(S)
-        if self.verify_tag(t0,t1) != 0:
-            m = ''
-        return str(m)
+  def aead_decrypt(h, c, t, n, k)
+    raise unless k.length == vars[:NORX_K] / 8
+    raise unless n.length == vars[:NORX_N] / 8
+    raise unless c.length >= vars[:BYTES_TAG] / 8
+    m = []
+    c = []
+    s = [0] * 16
+    d = c.length - vars[:BYTES_TAG]
+    c = c[0..d]
+    t0 = c[d..-1]
+    init(s, n, k)
+    process_header(s, h)
+    m += decrypt_data(s, c)
+    process_trailer(s, t)
+    t1 = generate_tag(s)
+    if verify_tag(t0, t1) != 0
+      m = ''
+    end
+    m.to_s
+  end
 
   private
 
